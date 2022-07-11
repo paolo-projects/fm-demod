@@ -31,7 +31,7 @@ public:
 		using pointer = T *;
 		using reference = T &;
 
-		iterator(pointer ptr) :
+		iterator(pointer ptr, int pointsToSkip) :
 				m_ptr(ptr) {
 		}
 
@@ -103,6 +103,7 @@ public:
 
 	private:
 		pointer m_ptr;
+		int pointsToSkip;
 	};
 
 	T& at(size_t i) {
@@ -119,10 +120,10 @@ public:
 		return data[i * pointsToSkip];
 	}
 	iterator begin() {
-		return iterator(&data[0]);
+		return iterator(&data[0], pointsToSkip);
 	}
 	iterator end() {
-		return iterator(&data[data.size()]);
+		return iterator(&data[data.size()], pointsToSkip);
 	}
 	size_t size() const {
 		return _size;

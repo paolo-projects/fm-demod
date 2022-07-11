@@ -97,6 +97,17 @@ public:
         cv.notify_one();
     }
 
+    /**
+     * Clears the pending data inside the queue
+     */
+    void clear()
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        while(!dataQueue.empty()) {
+            dataQueue.pop();
+        }
+    }
+
     static void *innerExecutor(void *arguments)
     {
         DataProcessingThreadPool<T, Size> *_this = reinterpret_cast<DataProcessingThreadPool<T, Size> *>(arguments);

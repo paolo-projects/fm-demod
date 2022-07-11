@@ -2,7 +2,8 @@
 
 #define DurationMs(end, begin) std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count()
 
-FmDemodulator::FmDemodulator(std::function<void(const DataBuffer<int16_t> &)> demodCallback, int sampleRate, int audioSampleRate, unsigned int sdrBufferSize, float gain)
+FmDemodulator::FmDemodulator(std::function<void(const DataBuffer<int16_t> &)> demodCallback, int sampleRate,
+                             int audioSampleRate, float gain)
     : demodCallback(demodCallback),
       sampleRate(sampleRate),
       audioSampleRate(audioSampleRate),
@@ -10,9 +11,6 @@ FmDemodulator::FmDemodulator(std::function<void(const DataBuffer<int16_t> &)> de
       filterMtx(),
       lowPass(filterMtx, 100000, 8192, sampleRate),
       audioLowPass(filterMtx, 20000, 4096, FM_DOWNSAMPLED),
-      sdrBufferSize(sdrBufferSize),
-      downsampledSize(sdrBufferSize / ((2 * sampleRate) / FM_DOWNSAMPLED)),
-      outputSize((downsampledSize - 1) / (FM_DOWNSAMPLED / audioSampleRate)),
       sdrTransformPool(&FmDemodulator::transformExecutor, this),
       filterPool(&FmDemodulator::filterExecutor, this),
       demodPool(&FmDemodulator::demodExecutor, this)
@@ -26,6 +24,11 @@ FmDemodulator::~FmDemodulator()
 void FmDemodulator::demodulate(const DataBuffer<uint8_t> &buffer, size_t count)
 {
     sdrTransformPool.process(DataBuffer<uint8_t>(buffer.get(), count));
+}
+
+void FmDemodulator::demodulate(DataBuffer<uint8_t> &&buffer)
+{
+    sdrTransformPool.process(std::move(buffer));
 }
 
 void FmDemodulator::transformExecutor(DataBuffer<uint8_t> &data, void *arg)
@@ -58,10 +61,21 @@ void FmDemodulator::demodExecutor(DataBuffer<Complex> &data, void *arg)
 {
     FmDemodulator *_this = reinterpret_cast<FmDemodulator *>(arg);
 
-    DataBuffer<double> demodulatedBuffer(_this->downsampledSize - 1);
-    DataBuffer<int16_t> audioBuffer(_this->outputSize);
+    std::unique_lock<std::mutex> srLock(_this->sampleRateMtx);
+    int sRate = _this->sampleRate;
+    srLock.unlock();
 
-    DownsampledBufferAccessor<Complex> dataDs(data, _this->sampleRate, FM_DOWNSAMPLED);
+    std::unique_lock<std::mutex> gainLock(_this->dGainMtx);
+    float dGain = _this->digitalGain;
+    gainLock.unlock();
+
+    size_t downsampledSize = data.size() / (sRate / FM_DOWNSAMPLED);
+    size_t outputSize = (downsampledSize - 1) / (FM_DOWNSAMPLED / _this->audioSampleRate);
+
+    DataBuffer<double> demodulatedBuffer(downsampledSize - 1);
+    DataBuffer<int16_t> audioBuffer(outputSize);
+
+    DownsampledBufferAccessor<Complex> dataDs(data, sRate, FM_DOWNSAMPLED);
     for (size_t i = 1; i < dataDs.size(); i++)
     {
         demodulatedBuffer[i - 1] =
@@ -75,8 +89,27 @@ void FmDemodulator::demodExecutor(DataBuffer<Complex> &data, void *arg)
     DownsampledBufferAccessor<double> demodDs(demodulatedBuffer, FM_DOWNSAMPLED, _this->audioSampleRate);
     for (int i = 0; i < demodDs.size(); i++)
     {
-        audioBuffer[i] = FmDemodulator::coerceToInt16(demodDs[i] * _this->digitalGain);
+        audioBuffer[i] = FmDemodulator::coerceToInt16(demodDs[i] * dGain);
     }
 
     _this->demodCallback(audioBuffer);
+}
+
+void FmDemodulator::setSampleRate(int sampleRate) {
+    demodPool.clear();
+    std::lock_guard<std::mutex> lock(sampleRateMtx);
+    this->sampleRate = sampleRate;
+}
+
+void FmDemodulator::setDigitalGain(float gain) {
+    std::lock_guard<std::mutex> lock(dGainMtx);
+    this->digitalGain = gain;
+}
+
+int FmDemodulator::getSampleRate() const {
+    return this->sampleRate;
+}
+
+float FmDemodulator::getDigitalGain() const {
+    return this->digitalGain;
 }

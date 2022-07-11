@@ -30,26 +30,35 @@ public:
      * @param audioSampleRate Output audio sample rate
      */
     FmDemodulator(std::function<void(const DataBuffer<int16_t> &)> demodCallback,
-                  int sampleRate, int audioSampleRate, unsigned int sdrBufferSize, float gain = 1.0f);
+                  int sampleRate, int audioSampleRate, float gain = 1.0f);
 
     ~FmDemodulator();
 
     void demodulate(const DataBuffer<uint8_t> &buffer, size_t count);
+    void demodulate(DataBuffer<uint8_t> &&buffer);
+    /**
+     * Set the new sample rate. This function is thread safe
+     * @param sampleRate New sample rate
+     */
+    void setSampleRate(int sampleRate);
+    /**
+     * Set the new digital gain. This function is thread safe
+     * @param gain The new digital gain
+     */
+    void setDigitalGain(float gain);
+    int getSampleRate() const;
+    float getDigitalGain() const;
 
 private:
     static constexpr int FM_DOWNSAMPLED = 220500;
     static constexpr int TRDPOOL_SZ = 1;
 
-    std::mutex filterMtx;
+    std::mutex filterMtx, sampleRateMtx, dGainMtx;
     LowPass<Complex> lowPass;
     LowPass<double> audioLowPass;
 
     int sampleRate, audioSampleRate;
-    int sdrBufferSize;
     float digitalGain;
-    bool transformRunning = true, filterRunning = true, demodRunning = true;
-    size_t downsampledSize;
-    size_t outputSize;
 
     std::function<void(const DataBuffer<int16_t> &)> demodCallback;
 

@@ -1,10 +1,12 @@
 #include "FmDemodulator.h"
 
+#include <utility>
+
 #define DurationMs(end, begin) std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count()
 
-FmDemodulator::FmDemodulator(std::function<void(const DataBuffer<int16_t> &)> demodCallback, int sampleRate,
+FmDemodulator::FmDemodulator(std::function<void(const DataBuffer<int16_t> &)>  demodCallback, int sampleRate,
                              int audioSampleRate, float gain)
-    : demodCallback(demodCallback),
+    : demodCallback(std::move(demodCallback)),
       sampleRate(sampleRate),
       audioSampleRate(audioSampleRate),
       digitalGain(gain),
